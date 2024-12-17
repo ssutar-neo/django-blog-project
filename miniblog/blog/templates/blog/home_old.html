@@ -1,0 +1,132 @@
+
+
+
+{% extends 'blog/base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="posts">
+    <h3 class="my-5">Post Details</h3>
+    <div id="post-{{ post.id }}" class="jumbotron jumbotron-fluid jumbo-color">
+        {%for post in posts %}
+        <div class="container">
+            <h3 class="display-6 font-weight-bold">{{ post.title }}</h3>
+            <p>{{ post.description }}</p><br>
+            <!-- Comments Section -->
+            <div id="comments">
+                <!-- <h4>Comments:</h4> -->
+                {% for comment in post.comments.all %}
+                <div class="comment">
+                    <p><strong>{{ comment.author.username }}</strong> ({{ comment.created_at }}):</p>
+                    <p>{{ comment.text }}</p>
+                </div>
+                {% empty %}
+                <p>No comments yet.</p>
+                {% endfor %}
+            </div>
+
+            <!-- Comment Form -->
+            {% if user.is_authenticated %}
+            <h4>Add a Comment:</h4>
+            <form id="comment-form">
+                <input type="hidden" id="post-id" value="{{ post.id }}">
+                <input type="hidden" id="user-id" value="{{ user.id }}">
+                <textarea id="comment-text" required></textarea>
+                <button type="submit">Submit</button>
+            </form>
+            {% else %}
+            <p>You need to <a href="{% url 'login' %}">log in</a> to add a comment.</p>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Connect to WebSocket
+        var ws = new WebSocket('ws://' + window.location.host + '/ws/blog/');
+
+        ws.onopen = function(event) {
+            console.log('WebSocket connected');
+        };
+
+        ws.onmessage = function(event) {
+            var data = JSON.parse(event.data);
+            console.log('Received message:', data);
+
+            var postContainer = document.querySelector('.posts'); // Changed to match the class
+
+            if (data.type === 'new_post') {
+                // Handle new post
+                var newPost = document.createElement('div');
+                newPost.id = 'post-' + data.id;
+                newPost.className = 'jumbotron jumbotron-fluid jumbo-color'; // Added class to match styling
+                newPost.innerHTML = '<div class="container">' +
+                                    '<h3 class="display-6 font-weight-bold">' + data.title + '</h3>' +
+                                    '<p>' + data.description + '</p>' +
+                                    '</div>';
+                postContainer.appendChild(newPost);
+            } else if (data.type === 'delete_post') {
+                // Handle post deletion
+                var postElement = document.getElementById('post-' + data.id);
+                if (postElement) {
+                    postElement.remove();
+                }
+            } else if  (data.post_id === '{{ post.id }}') {
+                var commentsSection = document.getElementById('comments');
+
+                if (data.type === 'comment_message') {
+                    // Handle new comment
+                    var newComment = document.createElement('div');
+                    newComment.className = 'comment';
+                    newComment.innerHTML = '<p><strong>' + data.author + '</strong> (' + data.created_at + '):</p>' +
+                                           '<p>' + data.text + '</p>';
+                    commentsSection.appendChild(newComment);
+                }
+            }
+        };
+
+        ws.onclose = function(event) {
+            console.log('WebSocket disconnected');
+        };
+
+        ws.onerror = function(event) {
+            console.error('WebSocket error:', event);
+        };
+    });
+
+    function deletePost(postId) {
+        var ws = new WebSocket('ws://' + window.location.host + '/ws/blog/');
+        ws.onopen = function() {
+            ws.send(JSON.stringify({
+                'type': 'delete_post',
+                'id': postId // Ensure 'id' matches the expected key in the WebSocket message
+            }));
+        };
+
+    }
+    // Handle form submission for new comments
+    document.getElementById('comment-form').onsubmit = function(e) {
+    e.preventDefault();
+    var ws = new WebSocket('ws://' + window.location.host + '/ws/blog/');
+    
+    var postId = document.getElementById('post-id').value;
+    var commentText = document.getElementById('comment-text').value;
+    var userId = document.getElementById('user-id').value;
+
+    ws.send(JSON.stringify({
+        'post_id': postId,
+        'comment': commentText,
+        'user_id': userId,
+        'type': 'new_comment'
+    }));
+
+    // Clear the textarea after sending
+    document.getElementById('comment-text').value = '';
+};
+
+
+</script>
+{% endblock content %}
